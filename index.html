@@ -11,120 +11,253 @@
   <link rel="stylesheet"
     href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 
+  <style>
+    /* Custom styles for smooth transitions and animations */
+    .fade-in-section {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    }
+
+    .fade-in-section.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Spinner animation */
+    .spinner {
+      border: 2px solid rgba(0, 0, 0, 0.1);
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border-left-color: #09f;
+      animation: spin 1s ease infinite;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+
   <script>
-    // Iniciar la conexión
+    // Iniciar la conexión Socket.IO en cuanto la página carga
     const socket = io();
 
     $(document).ready(function() {
-      $("#predictionForm").submit(function(event) {
-        // Prevenir el envío tradicional del formulario, que recargaría la página
+      const $predictionForm = $("#predictionForm");
+      const $submitButton = $predictionForm.find("button[type='submit']");
+      const $buttonText = $submitButton.find("span:first");
+      const $spinner = $submitButton.find(".spinner");
+      const $resultsContainer = $("#results-container");
+      const $classifiedAnswerCard = $("#classified-answer-card");
+      const $aiAnswerCard = $("#ai-answer-card");
+
+      // --- FIX: Moved these variables here to manage state across submissions ---
+      let aiResponse = "";
+      let isFirstChunk = true;
+
+      // Interceptar el evento de envío del formulario
+      $predictionForm.submit(function(event) {
         event.preventDefault();
 
-        // Validar el formulario antes de enviarlo
         if (!validateForm()) {
           return;
         }
 
-        // Mostrar mensajes de estado iniciales
-        $("#classified-answer").html("Calculando la clasificación del caso...");
-        $("#aianswer").html("Contactando al asistente de IA...");
+        // --- THE FIX IS HERE: Reset the flag on every new submission ---
+        isFirstChunk = true; 
 
-        // Convertir datos del formulario a un objeto simple
+        // --- Start Loading State ---
+        $submitButton.prop('disabled', true);
+        $buttonText.text("Procesando...");
+        $spinner.removeClass('hidden');
+        $resultsContainer.addClass('opacity-0');
+
+        // Reset result areas
+        $("#classified-answer").html("Calculando la clasificación del caso...");
+        $("#ai-answer").html("Contactando al asistente de IA...");
+        $aiAnswerCard.addClass('hidden'); // Hide AI card until content starts arriving
+
         const formData = $(this).serializeArray();
         const data = {};
         $.each(formData, function() {
           data[this.name] = this.value;
         });
-        
-        // Asegurarse de que los checkboxes no seleccionados se envíen como '0'
+
         $('#predictionForm input[type=checkbox]').each(function() {
-            if (!this.checked) {
-                data[this.name] = '0';
-            }
+          if (!this.checked) {
+            data[this.name] = '0';
+          }
         });
 
-        // Enviar datos al servidor a través de Socket.IO
         socket.emit('submit_prediction', data);
       });
 
-      // Escuchar la respuesta de la clasificación local
+      // Escuchar el evento 'classified_answer'
       socket.on("classified_answer", function(data) {
-        const {
-          predicted_conducta,
-          predicted_clasfinal
-        } = data;
-        // Mostrar la respuesta clasificada inmediatamente
+        const { predicted_conducta, predicted_clasfinal } = data;
+        
         $("#classified-answer").html(
-          `El caso presentado tendría como clasificación: <strong>${predicted_clasfinal}</strong>, y el tipo de atención más probable sería: <strong>${predicted_conducta}</strong>`
+          `<p class="text-gray-600">El caso presentado tendría como clasificación: <strong class="text-black">${predicted_clasfinal}</strong>, y el tipo de atención más probable sería: <strong class="text-black">${predicted_conducta}</strong>.</p>`
         );
-        // Preparar el espacio para la respuesta de la IA, que llegará después
-        $("#aianswer").empty();
-      });
 
-      // Escuchar la respuesta de la IA en streaming
-      let aiResponse = "";
+        // --- Show results and reset button ---
+        $resultsContainer.removeClass('opacity-0');
+        $submitButton.prop('disabled', false);
+        $buttonText.text("Predecir");
+        $spinner.addClass('hidden');
+      });
+      
       socket.on("ai_response", function(data) {
-        const {
-          data: chunk
-        } = data;
+        if(isFirstChunk) {
+            aiResponse = ""; // Clear previous response
+            $aiAnswerCard.removeClass('hidden'); // Show the card on first chunk
+            isFirstChunk = false;
+        }
+
+        const { data: chunk } = data;
         aiResponse += chunk;
         const formattedResponse = aiResponse.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-        $("#aianswer").html(formattedResponse);
+        $("#ai-answer").html(formattedResponse);
       });
 
-      // Manejar errores de comunicación o del servidor
       socket.on('error', function(err) {
-        $("#aianswer").html(`<p style="color: red;">Error de comunicación con el servidor: ${err.message}</p>`);
+        $("#ai-answer").html(`<p class="text-red-500">Error de comunicación con el servidor: ${err.message}</p>`);
+        $aiAnswerCard.removeClass('hidden');
+      });
+
+      // Scroll-triggered fade-in animation
+      const sections = $('.fade-in-section');
+      const observer = new IntersectionObserver(function(entries, observer) {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            $(entry.target).addClass('is-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.1 });
+
+      sections.each(function() {
+        observer.observe(this);
       });
     });
 
     function validateForm() {
-        let isValid = true;
-        const edad = document.getElementById("edad").value;
-        const sexo = document.getElementById("sexo").value;
-        const edadError = document.getElementById("edadError");
-        const sexoError = document.getElementById("sexoError");
+      let isValid = true;
+      const edad = $("#edad").val();
+      const sexo = $("#sexo").val();
+      const edadError = $("#edadError");
+      const sexoError = $("#sexoError");
 
-        if (!edad || edad < 1 || edad > 99) {
-            edadError.classList.remove("hidden");
-            isValid = false;
-        } else {
-            edadError.classList.add("hidden");
-        }
-        if (!sexo) {
-            sexoError.classList.remove("hidden");
-            isValid = false;
-        } else {
-            sexoError.classList.add("hidden");
-        }
-        return isValid;
+      if (!edad || edad < 1 || edad > 99) {
+        edadError.removeClass("hidden");
+        isValid = false;
+      } else {
+        edadError.addClass("hidden");
+      }
+      if (!sexo) {
+        sexoError.removeClass("hidden");
+        isValid = false;
+      } else {
+        sexoError.addClass("hidden");
+      }
+      return isValid;
     }
   </script>
 
 </head>
 
-<body>
+<body class="bg-gray-50">
 
-  <section>
+  <section class="fade-in-section">
     <div class="px-8 py-24 mx-auto md:px-12 lg:px-32 max-w-7xl">
-      <!-- ... El resto de su contenido HTML informativo ... -->
+      <div>
+        <div class="grid items-end grid-cols-1 gap-4 lg:grid-cols-3">
+          <div class="w-full lg:col-span-2">
+            <h1 class="text-4xl font-semibold tracking-tighter text-gray-900 lg:text-5xl">
+              Conoce más sobre el dengue,
+              <span class="text-gray-600">una amenaza global</span>
+            </h1>
+          </div>
+          <p class="text-base font-medium text-gray-500 ">
+            Información esencial para la prevención y el control del dengue.
+          </p>
+        </div>
+        <div class="relative h-full p-2 mt-12 overflow-hidden border rounded-3xl">
+          <img src="./static/Dengue_share.jpg" class="object-cover h-full border shadow-2xl rounded-2xl">
+        </div>
+        <dl class="grid grid-cols-1 gap-6 mt-12 lg:grid-cols-3 text-balance">
+          <div>
+            <dt class="font-medium text-gray-900">Transmisión del dengue</dt>
+            <dd class="mt-2 text-sm font-medium text-gray-500">
+              El dengue se transmite principalmente a través de la picadura del mosquito Aedes aegypti.
+            </dd>
+          </div>
+          <div>
+            <dt class="font-medium text-gray-900">Síntomas del dengue</dt>
+            <dd class="mt-2 text-sm text-gray-500">
+              Los síntomas incluyen fiebre alta, dolor de cabeza severo, dolor detrás de los ojos, dolor en las
+              articulaciones y músculos, fatiga, náuseas, vómitos y erupciones cutáneas.
+            </dd>
+          </div>
+          <div>
+            <dt class="font-medium text-gray-900">Prevención del dengue</dt>
+            <dd class="mt-2 text-sm text-gray-500">
+              Para prevenir el dengue, es importante eliminar los criaderos de mosquitos, usar repelente, y cubrir la
+              piel con ropa adecuada.
+            </dd>
+          </div>
+        </dl>
+      </div>
     </div>
   </section>
 
-  <section>
-    <div class="flex items-center lg:col-span-2 flex-col text-center">
-      <h1 class="text-2xl font-semibold tracking-tighter text-gray-900 lg:text-3xl text-balance">
-        Los resultados proporcionados por este algoritmo predictivo sobre la gravedad del dengue son orientativos y no deben sustituir la consulta médica profesional.
-      </h1>
-      <p class="mt-4 text-base font-medium text-gray-500 text-balance">
-        Si tiene alguna preocupación o duda sobre su salud, por favor consulte a un médico
-      </p>
-    </div>
+  <section class="fade-in-section">
     <div class="px-8 py-24 mx-auto md:px-12 lg:px-32 max-w-7xl">
-      <div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-24">
-        <div class="p-2 border bg-gray-50 rounded-3xl">
+      <div class="text-center">
+        <h1 class="text-4xl font-semibold tracking-tighter text-gray-900 lg:text-5xl text-balance">
+          Los sintomas del dengue, <br>
+          <span class="text-gray-600">lo que debes saber sobre estos</span>
+        </h1>
+        <p class="mt-4 text-base font-medium text-gray-500 text-balance">
+          El dengue es una enfermedad viral transmitida por mosquitos que provoca una variedad de síntomas debilitantes.
+          Reconocer estos síntomas y buscar atención médica temprana es esencial para un manejo adecuado de la
+          enfermedad.
+        </p>
+
+        <div class="grid grid-cols-2 mt-12 text-center gap-x-6 gap-y-12 lg:mt-16 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-16">
+            <!-- Symptom items -->
+            <div><div><span class="flex items-center justify-center mx-auto rounded-full size-14 bg-white border"><img src="./static/sintomas/fiebre.png" class="h-8 w-8"></span></div><div class="mt-6"><h3 class="font-medium text-gray-900">Fiebre alta</h3><p class="mt-2 text-sm text-gray-500">Temperatura elevada y persistente, generalmente por encima de 38°C.</p></div></div>
+            <div><div><span class="flex items-center justify-center mx-auto rounded-full size-14 bg-white border"><img src="./static/sintomas/dolor-de-cabeza.png" class="h-8 w-8"></span></div><div class="mt-6"><h3 class="font-medium text-gray-900">Dolor de cabeza intenso</h3><p class="mt-2 text-sm text-gray-500">Cefalea intensa, a menudo descrita como pulsátil o detrás de los ojos.</p></div></div>
+            <div><div><span class="flex items-center justify-center mx-auto rounded-full size-14 bg-white border"><img src="./static/sintomas/ojo.png" class="h-8 w-8"></span></div><div class="mt-6"><h3 class="font-medium text-gray-900">Dolor retroocular</h3><p class="mt-2 text-sm text-gray-500">Dolor profundo detrás de los ojos, que empeora al moverlos.</p></div></div>
+            <div><div><span class="flex items-center justify-center mx-auto rounded-full size-14 bg-white border"><img src="./static/sintomas/dolor-muscular.png" class="h-8 w-8"></span></div><div class="mt-6"><h3 class="font-medium text-gray-900">Dolores musculares</h3><p class="mt-2 text-sm text-gray-500">Mialgias generalizadas que pueden dificultar el movimiento.</p></div></div>
+            <div><div><span class="flex items-center justify-center mx-auto rounded-full size-14 bg-white border"><img src="./static/sintomas/hueso-roto.png" class="h-8 w-8"></span></div><div class="mt-6"><h3 class="font-medium text-gray-900">Dolores articulares</h3><p class="mt-2 text-sm text-gray-500">Artralgias que afectan a las articulaciones, causando dolor e inflamación.</p></div></div>
+            <div><div><span class="flex items-center justify-center mx-auto rounded-full size-14 bg-white border"><img src="./static/sintomas/erupcion-cutanea.png" class="h-8 w-8"></span></div><div class="mt-6"><h3 class="font-medium text-gray-900">Erupción cutánea</h3><p class="mt-2 text-sm text-gray-500">Exantema maculopapular (manchas y pápulas rojizas) que puede causar picazón.</p></div></div>
+            <div><div><span class="flex items-center justify-center mx-auto rounded-full size-14 bg-white border"><img src="./static/sintomas/nauseas.png" class="h-8 w-8"></span></div><div class="mt-6"><h3 class="font-medium text-gray-900">Náuseas y vómitos</h3><p class="mt-2 text-sm text-gray-500">Malestar estomacal persistente que puede dificultar la hidratación.</p></div></div>
+            <div><div><span class="flex items-center justify-center mx-auto rounded-full size-14 bg-white border"><img src="./static/sintomas/dolor-abdominal.png" class="h-8 w-8"></span></div><div class="mt-6"><h3 class="font-medium text-gray-900">Dolor abdominal</h3><p class="mt-2 text-sm text-gray-500">Dolor en la zona abdominal, que puede ser difuso o localizado.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="fade-in-section">
+    <div class="px-8 py-24 mx-auto md:px-12 lg:px-32 max-w-7xl">
+      <div class="flex items-center lg:col-span-2 flex-col text-center">
+        <h1 class="text-2xl font-semibold tracking-tighter text-gray-900 lg:text-3xl text-balance">
+          Los resultados son orientativos y no sustituyen una consulta médica profesional.
+        </h1>
+        <p class="mt-4 text-base font-medium text-gray-500 text-balance">
+          Si tiene alguna preocupación o duda sobre su salud, por favor consulte a un médico.
+        </p>
+      </div>
+      <div class="grid items-start gap-12 mt-12 lg:grid-cols-2 lg:gap-24">
+        <div class="p-2 border bg-gray-100 rounded-3xl">
           <div class="p-10 bg-white border shadow-lg rounded-2xl">
-            <!-- *** LA CORRECCIÓN ESTÁ AQUÍ: onsubmit="return false;" HA SIDO ELIMINADO *** -->
             <form id="predictionForm">
               <div class="mb-4">
                 <label class="block text-gray-700 font-bold mb-2" for="edad">Edad:</label>
@@ -134,6 +267,7 @@
               <div class="mb-4">
                 <label class="block text-gray-700 font-bold mb-2" for="sexo">Sexo:</label>
                 <select class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="sexo" name="sexo" required>
+                  <option value="" disabled selected>Seleccione una opción</option>
                   <option value="M">Masculino</option>
                   <option value="F">Femenino</option>
                 </select>
@@ -141,40 +275,62 @@
               </div>
               <div class="mb-4">
                 <label class="block text-gray-700 font-bold mb-2">Síntomas:</label>
-                <div class="flex items-center mb-2"><input id="fiebre" type="checkbox" name="fiebre" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="fiebre" class="ml-2 text-gray-700">Fiebre</label></div>
-                <div class="flex items-center mb-2"><input id="cefalea" type="checkbox" name="cefalea" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="cefalea" class="ml-2 text-gray-700">Dolor de cabeza (<strong>cefalea</strong>)</label></div>
-                <div class="flex items-center mb-2"><input id="dolrretroo" type="checkbox" name="dolrretroo" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="dolrretroo" class="ml-2 text-gray-700">Dolor detrás de los ojos (<strong>dolor retroocular</strong>)</label></div>
-                <div class="flex items-center mb-2"><input id="malgias" type="checkbox" name="malgias" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="malgias" class="ml-2 text-gray-700">Dolores musculares (<strong>mialgias</strong>)</label></div>
-                <div class="flex items-center mb-2"><input id="artralgia" type="checkbox" name="artralgia" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="artralgia" class="ml-2 text-gray-700">Dolor en las articulaciones (<strong>artralgia</strong>)</label></div>
-                <div class="flex items-center mb-2"><input id="erupcionr" type="checkbox" name="erupcionr" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="erupcionr" class="ml-2 text-gray-700">Erupción cutánea</label></div>
-                <div class="flex items-center mb-2"><input id="dolor_abdo" type="checkbox" name="dolor_abdo" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="dolor_abdo" class="ml-2 text-gray-700">Dolor abdominal</label></div>
-                <div class="flex items-center mb-2"><input id="vomito" type="checkbox" name="vomito" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="vomito" class="ml-2 text-gray-700">Vómito</label></div>
-                <div class="flex items-center mb-2"><input id="diarrea" type="checkbox" name="diarrea" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="diarrea" class="ml-2 text-gray-700">Diarrea</label></div>
-                <div class="flex items-center mb-2"><input id="hipotensio" type="checkbox" name="hipotensio" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="hipotensio" class="ml-2 text-gray-700">Hipotensión (<strong>presión arterial baja</strong>)</label></div>
-                <div class="flex items-center mb-2"><input id="hepatomeg" type="checkbox" name="hepatomeg" value="1" class="form-checkbox h-5 w-5 text-gray-600" /><label for="hepatomeg" class="ml-2 text-gray-700">Hepatomegalia (<strong>agrandamiento del hígado</strong>)</label></div>
-              </div>
-              <div class="space-y-3">
-                <div class="col-span-full">
-                  <button type="submit" class="inline-flex items-center justify-center w-full h-12 gap-3 px-5 py-3 font-medium duration-200 bg-gray-100 rounded-xl hover:bg-gray-200 focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                    <span>Predecir</span>
-                  </button>
+                <!-- Checkbox items -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div class="flex items-center"><input id="fiebre" type="checkbox" name="fiebre" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="fiebre" class="ml-2 text-gray-700">Fiebre</label></div>
+                  <div class="flex items-center"><input id="cefalea" type="checkbox" name="cefalea" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="cefalea" class="ml-2 text-gray-700">Cefalea</label></div>
+                  <div class="flex items-center"><input id="dolrretroo" type="checkbox" name="dolrretroo" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="dolrretroo" class="ml-2 text-gray-700">Dolor retroocular</label></div>
+                  <div class="flex items-center"><input id="malgias" type="checkbox" name="malgias" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="malgias" class="ml-2 text-gray-700">Mialgias</label></div>
+                  <div class="flex items-center"><input id="artralgia" type="checkbox" name="artralgia" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="artralgia" class="ml-2 text-gray-700">Artralgia</label></div>
+                  <div class="flex items-center"><input id="erupcionr" type="checkbox" name="erupcionr" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="erupcionr" class="ml-2 text-gray-700">Erupción cutánea</label></div>
+                  <div class="flex items-center"><input id="dolor_abdo" type="checkbox" name="dolor_abdo" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="dolor_abdo" class="ml-2 text-gray-700">Dolor abdominal</label></div>
+                  <div class="flex items-center"><input id="vomito" type="checkbox" name="vomito" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="vomito" class="ml-2 text-gray-700">Vómito</label></div>
+                  <div class="flex items-center"><input id="diarrea" type="checkbox" name="diarrea" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="diarrea" class="ml-2 text-gray-700">Diarrea</label></div>
+                  <div class="flex items-center"><input id="hipotensio" type="checkbox" name="hipotensio" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="hipotensio" class="ml-2 text-gray-700">Hipotensión</label></div>
+                  <div class="flex items-center"><input id="hepatomeg" type="checkbox" name="hepatomeg" value="1" class="form-checkbox h-5 w-5 text-blue-600" /><label for="hepatomeg" class="ml-2 text-gray-700">Hepatomegalia</label></div>
                 </div>
+              </div>
+              <div class="mt-6">
+                <button type="submit" class="inline-flex items-center justify-center w-full h-12 gap-3 px-5 py-3 font-medium duration-200 bg-gray-900 text-white rounded-xl hover:bg-gray-700 focus:ring-2 focus:ring-offset-2 focus:ring-black disabled:bg-gray-400">
+                  <span>Predecir</span>
+                  <div class="spinner hidden"></div>
+                </button>
               </div>
             </form>
           </div>
         </div>
-        <div class="flex flex-col">
-          <h1 id="classified-answer" class="text-2xl font-medium tracking-tighter text-gray-900 lg:text-4xl">
-            Detecta la gravedad del paciente,
-            <span class="text-gray-600">a partir de los sintomas</span>
-          </h1>
-          <p id="aianswer" class="mt-4 text-base font-medium text-black text-pretty">
-            Utilizando Inteligencia Artificial Generativa
-          </p>
+        
+        <!-- Results Section -->
+        <div id="results-container" class="flex flex-col gap-8 opacity-0 transition-opacity duration-500">
+          <!-- Card for ML Classification -->
+          <div id="classified-answer-card" class="p-6 bg-white border rounded-2xl shadow-sm">
+            <div class="flex items-start gap-4">
+              <span class="material-symbols-outlined text-3xl text-blue-600">science</span>
+              <div>
+                <h2 class="text-xl font-semibold text-gray-900">Clasificación Predictiva</h2>
+                <div id="classified-answer" class="mt-2 text-base text-gray-700 text-pretty">
+                  Aquí se mostrará la clasificación inicial del caso basada en los síntomas proporcionados.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card for AI Recommendation -->
+          <div id="ai-answer-card" class="p-6 bg-white border rounded-2xl shadow-sm hidden">
+            <div class="flex items-start gap-4">
+              <span class="material-symbols-outlined text-3xl text-green-600">smart_toy</span>
+              <div>
+                <h2 class="text-xl font-semibold text-gray-900">Recomendación del Asistente IA</h2>
+                <div id="ai-answer" class="mt-2 text-base text-gray-700 text-pretty">
+                  El asistente de IA proporcionará una recomendación basada en la clasificación.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
 </body>
-</html>Z
+</html>
