@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import LabelEncoder
-from xgboost import XGBClassifier # <-- IMPORT THE NEW MODEL
+from xgboost import XGBClassifier
 import os
 from dotenv import load_dotenv
 import google.generativeai as genai

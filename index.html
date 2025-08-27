@@ -12,7 +12,7 @@
     href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 
   <style>
-    /* Custom styles for smooth transitions and animations */
+    
     .fade-in-section {
       opacity: 0;
       transform: translateY(20px);
@@ -45,7 +45,7 @@
   </style>
 
   <script>
-    // Iniciar la conexión Socket.IO en cuanto la página carga
+
     const socket = io();
 
     $(document).ready(function() {
@@ -57,7 +57,7 @@
       const $classifiedAnswerCard = $("#classified-answer-card");
       const $aiAnswerCard = $("#ai-answer-card");
 
-      // --- FIX: Moved these variables here to manage state across submissions ---
+  
       let aiResponse = "";
       let isFirstChunk = true;
 
@@ -69,7 +69,7 @@
           return;
         }
 
-        // --- THE FIX IS HERE: Reset the flag on every new submission ---
+
         isFirstChunk = true; 
 
         // --- Start Loading State ---
