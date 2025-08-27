@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dengue Prediction</title>
+</head>
+<body>
+    <form method="POST">
+        <label for="edad">Edad:</label><br>
+        <input type="number" id="edad" name="edad"><br>
+        <label for="sexo">Sexo:</label><br>
+        <input type="number" id="sexo" name="sexo"><br>
+        <label for="fiebre">Fiebre:</label><br>
+        <input type="number" id="fiebre" name="fiebre"><br>
+        <label for="diarrea">Diarrea:</label><br>
+        <input type="number" id="diarrea" name="diarrea"><br>
+        <input type="submit" value="Submit">
+    </form>
+    {% if predicted_clasfinal %}
+    <p>Predicted clasfinal: {{ predicted_clasfinal }}</p>
+    {% endif %}
+    {% if predicted_tip_cas %}
+    <p>Predicted tip_cas: {{ predicted_tip_cas }}</p>
+    {% endif %}
+</body>
+</html>
